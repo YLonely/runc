@@ -1322,6 +1322,19 @@ func (c *linuxContainer) Restore(process *Process, criuOpts *CriuOpts) error {
 		return err
 	}
 
+	// handle external namespaces for other types of ns
+	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWIPC); err != nil {
+		return err
+	}
+
+	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWUTS); err != nil {
+		return err
+	}
+
+	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWNS); err != nil {
+		return err
+	}
+
 	// This will modify the rootfs of the container in the same way runc
 	// modifies the container during initial creation.
 	if err := c.prepareCriuRestoreMounts(c.config.Mounts); err != nil {
