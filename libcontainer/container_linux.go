@@ -1270,20 +1270,25 @@ func (c *linuxContainer) Restore(process *Process, criuOpts *CriuOpts) error {
 	// * its parent must not be overmounted
 	// c.config.Rootfs is bind-mounted to a temporary directory
 	// to satisfy these requirements.
-	root := filepath.Join(c.root, "criu-root")
-	if err := os.Mkdir(root, 0755); err != nil {
-		return err
+	root := c.config.Rootfs
+	if c.config.Namespaces.PathOf(configs.NEWNS) == "" {
+		// if we have external mount namespace provided, do not mount rootfs to a temp mountpoint
+		root = filepath.Join(c.root, "criu-root")
+		if err := os.Mkdir(root, 0755); err != nil {
+			return err
+		}
+		defer os.Remove(root)
+		root, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			return err
+		}
+		err = unix.Mount(c.config.Rootfs, root, "", unix.MS_BIND|unix.MS_REC, "")
+		if err != nil {
+			return err
+		}
+		defer unix.Unmount(root, unix.MNT_DETACH)
 	}
-	defer os.Remove(root)
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
-		return err
-	}
-	err = unix.Mount(c.config.Rootfs, root, "", unix.MS_BIND|unix.MS_REC, "")
-	if err != nil {
-		return err
-	}
-	defer unix.Unmount(root, unix.MNT_DETACH)
+
 	t := criurpc.CriuReqType_RESTORE
 	req := &criurpc.CriuReq{
 		Type: &t,
@@ -1313,26 +1318,11 @@ func (c *linuxContainer) Restore(process *Process, criuOpts *CriuOpts) error {
 	// Same as during checkpointing. If the container has a specific network namespace
 	// assigned to it, this now expects that the checkpoint will be restored in a
 	// already created network namespace.
-	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWNET); err != nil {
-		return err
-	}
-
-	// Same for PID namespaces.
-	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWPID); err != nil {
-		return err
-	}
-
-	// handle external namespaces for other types of ns
-	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWIPC); err != nil {
-		return err
-	}
-
-	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWUTS); err != nil {
-		return err
-	}
-
-	if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, configs.NEWNS); err != nil {
-		return err
+	// new: restore other types of namespace
+	for _, nsType := range []configs.NamespaceType{configs.NEWNET, configs.NEWPID, configs.NEWIPC, configs.NEWUTS, configs.NEWNS} {
+		if err := c.handleRestoringExternalNamespaces(req.Opts, &extraFiles, nsType); err != nil {
+			return err
+		}
 	}
 
 	// This will modify the rootfs of the container in the same way runc
