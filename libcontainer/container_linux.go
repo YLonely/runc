@@ -880,10 +880,6 @@ func (c *linuxContainer) handleCheckpointingExternalNamespaces(rpcOpts *criurpc.
 }
 
 func (c *linuxContainer) handleRestoringExternalNamespaces(rpcOpts *criurpc.CriuOpts, extraFiles *[]*os.File, t configs.NamespaceType) error {
-	if !c.criuSupportsExtNS(t) {
-		return nil
-	}
-
 	nsPath := c.config.Namespaces.PathOf(t)
 	if nsPath == "" {
 		return nil
