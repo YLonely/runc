@@ -1230,6 +1230,10 @@ func (c *linuxContainer) Restore(process *Process, criuOpts *CriuOpts) error {
 	defer c.m.Unlock()
 
 	var extraFiles []*os.File
+	externalMountNamespace := false
+	if c.config.Namespaces.PathOf(configs.NEWNS) != "" {
+		externalMountNamespace = true
+	}
 
 	// Restore is unlikely to work if os.Geteuid() != 0 || system.RunningInUserNS().
 	// (CLI prints a warning)
@@ -1267,7 +1271,7 @@ func (c *linuxContainer) Restore(process *Process, criuOpts *CriuOpts) error {
 	// c.config.Rootfs is bind-mounted to a temporary directory
 	// to satisfy these requirements.
 	root := c.config.Rootfs
-	if c.config.Namespaces.PathOf(configs.NEWNS) == "" {
+	if !externalMountNamespace {
 		// if we have external mount namespace provided, do not mount rootfs to a temp mountpoint
 		root = filepath.Join(c.root, "criu-root")
 		if err := os.Mkdir(root, 0755); err != nil {
@@ -1323,8 +1327,10 @@ func (c *linuxContainer) Restore(process *Process, criuOpts *CriuOpts) error {
 
 	// This will modify the rootfs of the container in the same way runc
 	// modifies the container during initial creation.
-	if err := c.prepareCriuRestoreMounts(c.config.Mounts); err != nil {
-		return err
+	if !externalMountNamespace {
+		if err := c.prepareCriuRestoreMounts(c.config.Mounts); err != nil {
+			return err
+		}
 	}
 
 	hasCgroupns := c.config.Namespaces.Contains(configs.NEWCGROUP)
